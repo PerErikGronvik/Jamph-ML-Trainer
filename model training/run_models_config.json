@@ -1,0 +1,15 @@
+{
+  "models": [
+    {
+      "name": "qwen2.5-coder-1.5b-instruct",
+      "path": "qwen2.5-coder-1.5b-instruct_q4_k_m",
+      "modelfile": "Modelfile",
+      "enabled": true,
+      "description": "Qwen 2.5 Coder 1.5B - Q4_K_M quantized, optimized for CPU"
+    }
+  ],
+  "settings": {
+    "default_model": "qwen2.5-coder-1.5b-instruct",
+    "auto_load_enabled_models": true
+  }
+}
