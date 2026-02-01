@@ -22,3 +22,13 @@ Here we will find scripts and tracking of model modifications.
    - Deploy MLFlow to Nav's internal infrastructure
    - Update `MLFLOW_TRACKING_URI` environment variable to point to Nav's server
    - All code remains the same - only the connection string changes
+
+**Deplying files on Ollama for NAIS on Navs server.**
+
+# Install huggingface_hub
+pip install huggingface_hub
+
+# Login to Hugging Face
+huggingface-cli login
+
+# Upload your fine-tuned model (assuming it's in GGUF format) 
