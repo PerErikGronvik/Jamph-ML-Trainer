@@ -1,21 +1,16 @@
 [project]
 name = "jamph-ml-trainer"
 version = "0.1.0"
-description = "Model quantization and fine-tuning toolkit with MLflow tracking"
+description = "CPU-based model quantization toolkit for Ollama deployment"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "transformers>=4.47.0",
-    "torch>=2.5.0",
-    "mlflow>=2.18.0",
-    "datasets>=3.2.0",
-    "accelerate>=1.2.0",
-    "sentencepiece>=0.2.0",
-    "protobuf>=5.29.0",
+    "huggingface-hub>=0.26.0",
     "python-dotenv>=1.0.0",
     "typer>=0.15.0",
     "rich>=14.0.0",
     "gguf>=0.10.0",
+    # torch, numpy, sentencepiece installed separately in Dockerfile (CPU-only)
 ]
 
 [project.optional-dependencies]

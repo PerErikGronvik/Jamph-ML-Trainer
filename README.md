@@ -1,13 +1,16 @@
 # Jamph ML Trainer
 
-Model quantization and fine-tuning toolkit with MLflow tracking and Ollama.com deployment.
+Model quantization toolkit with Ollama.com deployment and RAG-friendly metadata.
 
 ## Features
 
-- **One-command workflow**: Download → Quantize → Upload
-- **MLflow Integration**: Automatic experiment tracking and model registry
-- **Jamph Namespace**: All models prefixed with `jamph-` to avoid conflicts
+- **One-command workflow**: Download → Quantize → Upload → Cleanup
+- **Multi-Method Quantization**: Process one model with multiple quantization methods efficiently
+- **Automatic Cleanup**: Deletes source and quantized files after successful upload
+- **RAG-Friendly Metadata**: Structured JSON for easy API/RAG integration
+- **Jamph Namespace**: All models prefixed with `jamph-` (configurable via MODEL_PREFIX)
 - **Cross-platform**: Docker + UV package manager
+- **CPU/GPU Auto-detect**: Works on CPU-only systems, uses GPU if available
 - **Multiple Quantization Methods**: Q4_K_M (default), Q5_K_M, Q8_0
 - **Ollama.com Distribution**: Direct upload to your Ollama.com namespace
 
@@ -15,7 +18,7 @@ Model quantization and fine-tuning toolkit with MLflow tracking and Ollama.com d
 
 ### Prerequisites
 
-1. **MLflow credentials** - Copy `example.mlflow.env` to `mlflow.env` and add your credentials
+1. **Ollama.com credentials** - Copy `example.ollama.env` to `ollama.env` and add your credentials
 2. **Ollama.com account** - Get token from https://ollama.com/settings/keys
 3. **Ollama CLI installed** - Download from https://ollama.com/download
 
@@ -49,15 +52,15 @@ uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B
 ### ✅ Credential Protection
 
 **Current safeguards:**
-- `.gitignore` excludes `mlflow.env` (real credentials)
+- `.gitignore` excludes `ollama.env` (real credentials)
 - `.dockerignore` prevents env files from being copied into image
-- `example.mlflow.env` is tracked (template only - no real credentials)
+- `example.ollama.env` is tracked (template only - no real credentials)
 - Docker uses `env_file` at runtime (credentials not baked into image layers)
 
 **Your responsibilities:**
-1. **NEVER commit `mlflow.env`** with real credentials
+1. **NEVER commit `ollama.env`** with real credentials
 2. **Store credentials securely** (password managers, Azure Key Vault, etc.)
-3. **Rotate tokens regularly** (Ollama, MLflow, HuggingFace)
+3. **Rotate tokens regularly** (Ollama, HuggingFace)
 4. **Use `.env.local`** for personal overrides (also gitignored)
 
 ### 🔒 Production Deployment
@@ -73,7 +76,6 @@ metadata:
 type: Opaque
 stringData:
   OLLAMA_TOKEN: <base64-encoded-token>
-  MLFLOW_TRACKING_PASSWORD: <base64-encoded-pwd>
 ```
 
 **Docker Swarm:**
@@ -101,8 +103,8 @@ Download, quantize, and upload in one command:
 # Full pipeline with default Q4_K_M quantization
 uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B
 
-# Custom quantization method
-uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B --method Q5_K_M
+# Multiple quantization methods (efficient: download once, quantize 3 times)
+uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B --methods Q4_K_M,Q5_K_M,Q8_0
 
 # Skip upload (quantize only)
 uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B --skip-upload
@@ -110,8 +112,8 @@ uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B --skip-upload
 # Skip download if model exists
 uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B --skip-download
 
-# Disable MLflow tracking
-uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B --no-mlflow
+# Keep files after upload (by default, files are deleted after successful upload)
+uv run jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B --keep-files
 ```
 
 ### `download` - Download Only
@@ -150,10 +152,8 @@ A team prefix (default: `jamph-`, configurable via `MODEL_PREFIX` env var) is ad
 - **Downloaded as**: `qwen2.5-coder-1.5b/` (directory, normalized, no prefix)
 - **Quantized file**: `jamph-qwen2.5-coder-1.5b-q4_k_m.gguf` (prefix added)
 - **Quantized dir**: `jamph-qwen2.5-coder-1.5b-q4_k_m/` (contains .gguf + metadata)
-- **MLflow model name**: `jamph-qwen2.5-coder-1.5b-q4_k_m.gguf` (matches filename exactly)
-- **MLflow run name**: `jamph-qwen2.5-coder-1.5b-q4_k_m.gguf-<git_username>-<date>`
-- **MLflow experiment**: `jamph-quantization` (prefix-quantization)
 - **Ollama.com**: `pererikgronvik/jamph-qwen2.5-coder-1.5b-q4_k_m` (your username namespace)
+- **RAG metadata**: `/models/.metadata/qwen2.5-coder-1.5b.json` (API-friendly format)
 
 **Multiple quantizations coexist without collisions:**
 - `jamph-qwen2.5-coder-1.5b-q4_k_m.gguf` (4-bit, smaller, faster)
@@ -161,79 +161,89 @@ A team prefix (default: `jamph-`, configurable via `MODEL_PREFIX` env var) is ad
 - `jamph-qwen2.5-coder-1.5b-q8_0.gguf` (8-bit, highest quality)
 
 **Team Customization:**
-Other teams can use their own namespace by setting `MODEL_PREFIX=myteam` in `mlflow.env`:
+Other teams can use their own namespace by setting `MODEL_PREFIX=myteam` in `ollama.env`:
 - Download: `qwen2.5-coder-1.5b/` (same)
 - Quantized: `myteam-qwen2.5-coder-1.5b-q4_k_m.gguf`
-- Experiment: `myteam-quantization`
+- Ollama: `username/myteam-qwen2.5-coder-1.5b-q4_k_m`
 
-## MLflow Tracking
+## File Cleanup
 
-### Model Registry Only
+By default, the pipeline automatically cleans up files after successful upload:
 
-MLflow is used **only for Model Registry** - not for experiment tracking. Quantization is a build step, not an experiment.
+1. **Source model files** deleted after all quantizations complete
+2. **Quantized GGUF files** deleted after successful upload to Ollama.com
+3. **RAG metadata** persisted in `/models/.metadata/` for API consumption
 
-**What gets registered:**
-- **Model Artifact**: The GGUF file itself
-- **Model Name**: Filename (e.g., `jamph-qwen2.5-coder-1.5b-q4_k_m.gguf`)
-- **Tags**: 
-  - `created_at`: ISO timestamp
-  - `filename`: GGUF filename
-  - `source_model`: Original HuggingFace model
-  - `quantization_method`: Q4_K_M, Q5_K_M, or Q8_0
-  - `creator`: Git username
-  - `team`: Team name
+This saves disk space and ensures models only exist in Ollama.com (single source of truth).
 
-**What MLflow is for:**
-- Model evaluation experiments
-- Performance comparison
-- Testing different models
-- A/B testing results
+To keep files locally, use `--keep-files` flag.
 
-**Not for:**
-- Quantization metrics (stored in MODEL_LOG.md instead)
-- Build/compilation tracking
+## RAG-Friendly Metadata
 
-### Model Documentation
+Each model gets a JSON metadata file optimized for RAG/API consumption:
 
-Each quantized model includes comprehensive documentation:
+**Location**: `/models/.metadata/{model-name}.json`
 
-**MODEL_LOG.md** - Human-readable documentation with:
-- Original model name and size
-- Quantization method and parameters
-- Creator (git username) and team
-- Creation timestamp
-- Processing time and compression ratio
-- Usage examples
+**Example** (`/models/.metadata/qwen2.5-coder-1.5b.json`):
 
-**quantization_metadata.json** - Machine-readable metadata for automation
+```json
+{
+  "model": {
+    "name": "qwen2.5-coder-1.5b",
+    "full_name": "jamph-qwen2.5-coder-1.5b",
+    "source": {
+      "huggingface": "qwen/Qwen2.5-Coder-1.5B",
+      "type": "transformer"
+    }
+  },
+  "quantizations": [
+    {
+      "method": "Q4_K_M",
+      "size_mb": 987.45,
+      "uploaded_at": "2024-01-15T10:30:00",
+      "ollama_url": "https://ollama.com/pererikgronvik/jamph-qwen2.5-coder-1.5b-q4_k_m",
+      "ollama_command": "ollama run pererikgronvik/jamph-qwen2.5-coder-1.5b-q4_k_m"
+    },
+    {
+      "method": "Q5_K_M",
+      "size_mb": 1234.56,
+      "uploaded_at": "2024-01-15T10:35:00",
+      "ollama_url": "https://ollama.com/pererikgronvik/jamph-qwen2.5-coder-1.5b-q5_k_m",
+      "ollama_command": "ollama run pererikgronvik/jamph-qwen2.5-coder-1.5b-q5_k_m"
+    }
+  ],
+  "metadata": {
+    "created_by": "pererik",
+    "team": "ResearchOps",
+    "created_at": "2024-01-15T10:30:00",
+    "prefix": "jamph"
+  },
+  "usage": {
+    "description": "Quantized versions of qwen/Qwen2.5-Coder-1.5B for efficient inference",
+    "recommended": "Q4_K_M",
+    "notes": "Q4_K_M for best speed/quality balance, Q5_K_M for better quality, Q8_0 for highest quality"
+  }
+}
+```
 
-These files are automatically:
-- Saved in the model directory
-- Logged to MLflow as artifacts
-- Uploaded to HuggingFace/Ollama.com
-
-**Why filename = model name?**
-This ensures predictability when using models in other software. The MLflow model name matches the actual GGUF file exactly, so experiments can reliably reference models by their filesystem name.
-
-### Viewing Results
-
-Visit https://mlflow.vishvadukan.no to see:
-- **Model Registry**: All quantized models with versions and metadata
-- Use MLflow for model evaluation experiments (performance testing, comparison)
+**Benefits for RAG/API:**
+- Structured, parseable format
+- Direct Ollama URLs and commands
+- Size information for filtering
+- Timestamp for freshness checks
+- Team/creator attribution
 
 ## Environment Variables
 
-Required in `mlflow.env`:
+Required in `ollama.env`:
 
 ```bash
-# MLflow server
-MLFLOW_TRACKING_URI=https://mlflow.vishvadukan.no
-MLFLOW_TRACKING_USERNAME=your_username
-MLFLOW_TRACKING_PASSWORD=your_password
-
 # Ollama.com (for model distribution)
 OLLAMA_USERNAME=pererikgronvik
-OLLAMA_TOKEN=your_ollama_token
+OLLAMA_TOKEN=oll_your_token_here
+
+# HuggingFace (optional, for downloading private models)
+HF_TOKEN=hf_your_token_here
 
 # Model naming prefix
 MODEL_PREFIX=jamph
@@ -241,7 +251,6 @@ MODEL_PREFIX=jamph
 # Optional: Developer metadata
 GITHUB_HANDLE=YourName
 TEAM=YourTeam
-ROLE=ML Engineer
 ```
 
 ## Docker Details
@@ -273,18 +282,16 @@ Jamph-ML-Trainer/
 ├── src/jamph_ml_trainer/
 │   ├── __init__.py
 │   ├── cli.py                  # Main CLI entry point
-│   ├── mlflow_tracking.py      # MLflow integration
-│   ├── ollama_upload.py        # HuggingFace upload
+│   ├── ollama_upload.py        # Ollama.com upload
 │   └── utils.py                # Shared utilities
 ├── model training/
-│   └── Models/                 # Downloaded and quantized models
-├── training data for finetuning/
-│   └── v1/                     # JSONL training data
+│   ├── Models/                 # Downloaded and quantized models
+│   └── .metadata/              # RAG-friendly JSON metadata
 ├── logs/                       # Crash reports
 ├── pyproject.toml              # UV package configuration
 ├── Dockerfile.quantize         # Multi-stage build
 ├── docker-compose.quantize.yml # Docker orchestration
-└── mlflow.env                  # Credentials (gitignored)
+└── ollama.env                  # Credentials (gitignored)
 ```
 
 ## Legacy Scripts
@@ -312,23 +319,15 @@ cmake -B build
 cmake --build build
 ```
 
-### MLflow connection fails
+### HuggingFace download fails
 
-Check `mlflow.env` credentials and verify server access:
-
-```bash
-curl -u username:password https://mlflow.vishvadukan.no/api/2.0/mlflow/experiments/list
-```
-
-### HuggingFace upload fails
-
-Verify token permissions:
+Verify token (if downloading private models):
 
 ```bash
 huggingface-cli whoami
 ```
 
-Token needs `write` permissions.
+Token needs `read` permissions.
 
 ### Ollama upload fails
 

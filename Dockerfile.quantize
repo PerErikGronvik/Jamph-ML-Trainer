@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
 # Set llama.cpp version (update as needed)
 ARG LLAMA_CPP_VERSION=b4291
 
-# Clone and build llama.cpp
+# Clone and build llama.cpp (auto-detects GPU, fallback to CPU)
 WORKDIR /build
 RUN git clone https://github.com/ggerganov/llama.cpp.git && \
     cd llama.cpp && \
@@ -47,6 +47,15 @@ COPY src/ ./src/
 
 # Install dependencies with UV (frozen lockfile for reproducibility)
 RUN uv sync --frozen --no-dev
+
+# Install CPU-only PyTorch separately (for model weight loading in convert script)
+# llama.cpp quantization uses auto-detected GPU/CPU, but torch is only for loading
+# Install torch+numpy from CPU index, sentencepiece from PyPI
+RUN uv pip install sentencepiece>=0.1.99 && \
+    uv pip install \
+    'torch>=2.0.0' \
+    'numpy>=1.24.0' \
+    --index-url https://download.pytorch.org/whl/cpu
 
 # =============================================================================
 # Stage 3: Final runtime image
@@ -95,6 +104,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Metadata
 LABEL org.opencontainers.image.title="Jamph ML Trainer" \
-      org.opencontainers.image.description="Model quantization and fine-tuning with MLflow tracking" \
+      org.opencontainers.image.description="Model quantization toolkit (CPU/GPU auto-detect)" \
       org.opencontainers.image.authors="Jamph Team" \
       org.opencontainers.image.source="https://github.com/navikt/jamph-sql-ki-assistent"

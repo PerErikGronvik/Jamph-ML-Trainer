@@ -67,3 +67,73 @@ def get_models_dir() -> Path:
     if os.path.exists("/models"):
         return Path("/models")
     return Path(__file__).parent.parent.parent / "model training" / "Models"
+
+
+def create_rag_metadata(
+    model_name: str,
+    source_model: str,
+    quantizations: list[Dict[str, Any]],
+    created_by: str,
+    team: str,
+    ollama_username: str
+) -> Dict[str, Any]:
+    """
+    Create RAG-friendly metadata for model quantizations.
+    
+    Args:
+        model_name: Normalized model name (e.g., qwen2.5-coder-1.5b)
+        source_model: HuggingFace model ID (e.g., qwen/Qwen2.5-Coder-1.5B)
+        quantizations: List of quantization info dicts with method, size_mb, uploaded_at
+        created_by: GitHub username or developer identifier
+        team: Team name
+        ollama_username: Ollama.com username for URL construction
+    
+    Returns:
+        RAG-friendly metadata dictionary
+    """
+    prefix = os.getenv("MODEL_PREFIX", "jamph")
+    
+    return {
+        "model": {
+            "name": model_name,
+            "full_name": f"{prefix}-{model_name}",
+            "source": {
+                "huggingface": source_model,
+                "type": "transformer"
+            }
+        },
+        "quantizations": [
+            {
+                "method": q["method"],
+                "size_mb": round(q["size_mb"], 2),
+                "uploaded_at": q["uploaded_at"],
+                "ollama_url": f"https://ollama.com/{ollama_username}/{prefix}-{model_name}-{q['method'].lower()}",
+                "ollama_command": f"ollama run {ollama_username}/{prefix}-{model_name}-{q['method'].lower()}"
+            }
+            for q in quantizations
+        ],
+        "metadata": {
+            "created_by": created_by,
+            "team": team,
+            "created_at": datetime.now().isoformat(),
+            "prefix": prefix
+        },
+        "usage": {
+            "description": f"Quantized versions of {source_model} for efficient inference",
+            "recommended": quantizations[0]["method"] if quantizations else "Q4_K_M",
+            "notes": "Q4_K_M for best speed/quality balance, Q5_K_M for better quality, Q8_0 for highest quality"
+        }
+    }
+
+
+def cleanup_source_model(model_dir: Path) -> None:
+    """Delete downloaded source model files after quantization."""
+    import shutil
+    if model_dir.exists() and model_dir.is_dir():
+        shutil.rmtree(model_dir)
+
+
+def cleanup_quantized_file(gguf_file: Path) -> None:
+    """Delete quantized GGUF file after successful upload."""
+    if gguf_file.exists() and gguf_file.is_file():
+        gguf_file.unlink()

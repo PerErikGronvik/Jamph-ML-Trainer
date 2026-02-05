@@ -11,11 +11,10 @@ services:
       - ./model training/Models:/models
       - ./logs:/logs
       - ./cache:/cache
-      - ./training data for finetuning:/training-data:ro  # Read-only training data
     
-    # Environment variables from mlflow.env
+    # Environment variables from ollama.env
     env_file:
-      - mlflow.env
+      - ollama.env
     
     environment:
       # Model storage
@@ -27,14 +26,12 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app/src
       
-      # HuggingFace (override in mlflow.env)
+      # HuggingFace (override in ollama.env)
       - HF_HOME=/cache/huggingface
       - HF_TOKEN=${HF_TOKEN}
       
-      # MLflow (override in mlflow.env)
-      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-https://mlflow.vishvadukan.no}
-      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USERNAME}
-      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASSWORD}
+      # Model configuration
+      - MODEL_PREFIX=${MODEL_PREFIX:-jamph}
     
     # Command: process a model (override with docker-compose run)
     # Example: docker-compose run quantizer process --model-id qwen/Qwen2.5-Coder-1.5B

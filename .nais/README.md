@@ -12,10 +12,7 @@ Create secret `jamph-ml-secrets` with these keys:
 kubectl create secret generic jamph-ml-secrets \
   --namespace=team-researchops \
   --from-literal=OLLAMA_TOKEN='oll_xxxxx' \
-  --from-literal=OLLAMA_USERNAME='navikt' \
-  --from-literal=MLFLOW_TRACKING_URI='https://mlflow.nav.no' \
-  --from-literal=MLFLOW_TRACKING_USERNAME='mlflow-user' \
-  --from-literal=MLFLOW_TRACKING_PASSWORD='xxxxx'
+  --from-literal=OLLAMA_USERNAME='navikt'
 ```
 
 ### 2. Persistent Volume Claims
@@ -80,5 +77,5 @@ kubectl exec -it deployment/jamph-ml-trainer -n team-researchops -- ls -lh /mode
 ## Output
 
 - Quantized models uploaded to Ollama.com under `navikt/` namespace
-- Model registry updated in MLflow
 - Models available at: `https://ollama.com/navikt/nav-{model-name}-{quantization}`
+- RAG-friendly metadata saved to `/models/.metadata/`

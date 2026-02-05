@@ -1,8 +1,8 @@
 # Environment files
 *.env
 .env
-mlflow.env
-!example.mlflow.env
+ollama.env
+!example.ollama.env
 
 # Model files
 *.safetensors

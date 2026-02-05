@@ -9,7 +9,6 @@ import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from .mlflow_tracking import MLflowTracker
 from .ollama_upload import OllamaUploader
 from .utils import get_jamph_name, get_models_dir
 
@@ -46,8 +45,7 @@ def download_model_impl(model_id: str, revision: str = "main") -> Path:
 
 def quantize_model_impl(
     model_path: Path,
-    method: str = "Q4_K_M",
-    mlflow_tracker: Optional[MLflowTracker] = None
+    method: str = "Q4_K_M"
 ) -> Path:
     """Quantize model using llama.cpp."""
     import subprocess
@@ -171,19 +169,6 @@ llama-cli -m {quantized_name}.gguf
     
     console.print("[green]✓[/green] Created MODEL_LOG.md and metadata files")
     
-    # Log metrics to MLflow if tracker provided
-    if mlflow_tracker:
-        git_username = os.getenv("GITHUB_HANDLE", os.getenv("USER", "unknown"))
-        team = os.getenv("TEAM", "Unknown")
-        
-        mlflow_tracker.register_model(
-            model_path=quantized_file,
-            source_model=model_path.name,
-            quantization_method=method,
-            git_username=git_username,
-            team=team
-        )
-    
     console.print(f"[green]✓[/green] Quantized model: {quantized_file}")
     return quantized_file
 
@@ -205,8 +190,7 @@ def download(
 @app.command()
 def quantize(
     model_path: str = typer.Argument(..., help="Path to model directory"),
-    method: str = typer.Option("Q4_K_M", help="Quantization method (Q4_K_M, Q5_K_M, Q8_0)"),
-    no_mlflow: bool = typer.Option(False, help="Disable MLflow tracking")
+    method: str = typer.Option("Q4_K_M", help="Quantization method (Q4_K_M, Q5_K_M, Q8_0)")
 ):
     """Quantize a model using llama.cpp."""
     try:
@@ -215,9 +199,7 @@ def quantize(
             console.print(f"[bold red]✗ Model not found:[/bold red] {model_dir}")
             raise typer.Exit(1)
         
-        mlflow_tracker = None if no_mlflow else MLflowTracker()
-        
-        quantized_file = quantize_model_impl(model_dir, method, mlflow_tracker)
+        quantized_file = quantize_model_impl(model_dir, method)
         
         console.print(f"[cyan]Quantized model:[/cyan] {quantized_file.name}")
     except Exception as e:
@@ -264,16 +246,23 @@ def upload(
 @app.command()
 def process(
     model_id: str = typer.Argument(..., help="HuggingFace model ID"),
-    method: str = typer.Option("Q4_K_M", help="Quantization method"),
+    methods: str = typer.Option("Q4_K_M", help="Comma-separated quantization methods (Q4_K_M,Q5_K_M,Q8_0)"),
     skip_download: bool = typer.Option(False, help="Skip download if model exists"),
-    skip_upload: bool = typer.Option(False, help="Skip upload to HuggingFace"),
-    no_mlflow: bool = typer.Option(False, help="Disable MLflow tracking")
+    skip_upload: bool = typer.Option(False, help="Skip upload to Ollama"),
+    keep_files: bool = typer.Option(False, help="Keep source and quantized files after upload")
 ):
-    """Complete pipeline: download → quantize → upload."""
+    """Complete pipeline: download → quantize (multiple methods) → upload → cleanup."""
     try:
-        # Download uses normalized name (no jamph- prefix)
+        from datetime import datetime
+        from .utils import create_rag_metadata, cleanup_source_model, cleanup_quantized_file
+        
+        # Parse quantization methods
+        method_list = [m.strip() for m in methods.split(",")]
+        
+        # Download uses normalized name (no prefix)
         normalized_name = get_jamph_name(model_id, include_prefix=False)
         console.print(f"[bold cyan]Starting pipeline for {normalized_name}[/bold cyan]")
+        console.print(f"[cyan]Quantization methods:[/cyan] {', '.join(method_list)}")
         
         # Step 1: Download
         models_dir = get_models_dir()
@@ -282,38 +271,85 @@ def process(
         if skip_download and model_dir.exists():
             console.print(f"[yellow]⊙[/yellow] Skipping download, using existing: {model_dir}")
         else:
-            console.print("\n[bold]Step 1/3: Download[/bold]")
+            console.print(f"\n[bold]Step 1/{len(method_list) + 2}: Download[/bold]")
             model_dir = download_model_impl(model_id)
         
-        # Step 2: Quantize
-        console.print("\n[bold]Step 2/3: Quantize[/bold]")
-        mlflow_tracker = None if no_mlflow else MLflowTracker()
+        # Step 2: Quantize (multiple methods)
+        quantized_files = []
+        quantizations_metadata = []
         
-        quantized_file = quantize_model_impl(model_dir, method, mlflow_tracker)
-        
-        console.print(f"[cyan]Model registered as:[/cyan] {quantized_file.name}")
+        for idx, method in enumerate(method_list, start=1):
+            console.print(f"\n[bold]Step {idx + 1}/{len(method_list) + 2}: Quantize ({method})[/bold]")
+            quantized_file = quantize_model_impl(model_dir, method)
+            quantized_files.append(quantized_file)
+            
+            # Store metadata for RAG
+            quantizations_metadata.append({
+                "method": method,
+                "size_mb": quantized_file.stat().st_size / (1024**2),
+                "uploaded_at": datetime.now().isoformat()
+            })
+            
+            console.print(f"[green]✓[/green] Quantized: {quantized_file.name}")
         
         # Step 3: Upload
         if not skip_upload:
-            console.print("\n[bold]Step 3/3: Upload[/bold]")
+            console.print(f"\n[bold]Step {len(method_list) + 2}/{len(method_list) + 2}: Upload to Ollama[/bold]")
             uploader = OllamaUploader()
             
             prefix = os.getenv("MODEL_PREFIX", "jamph")
-            prefixed_quantized_name = f"{prefix}-{normalized_name}-{method.lower()}"
+            ollama_username = os.getenv("OLLAMA_USERNAME", "unknown")
             
-            uploader.upload_model(
-                model_name=prefixed_quantized_name,
-                model_dir=quantized_file.parent,
-                gguf_file=quantized_file,
+            for quantized_file, method in zip(quantized_files, method_list):
+                prefixed_quantized_name = f"{prefix}-{normalized_name}-{method.lower()}"
+                
+                console.print(f"[cyan]Uploading {method}...[/cyan]")
+                uploader.upload_model(
+                    model_name=prefixed_quantized_name,
+                    model_dir=quantized_file.parent,
+                    gguf_file=quantized_file,
+                    source_model=model_id,
+                    quantization_method=method
+                )
+                console.print(f"[green]✓[/green] Uploaded: {ollama_username}/{prefixed_quantized_name}")
+                
+                # Cleanup quantized file after successful upload
+                if not keep_files:
+                    cleanup_quantized_file(quantized_file)
+                    console.print(f"[dim]Cleaned up: {quantized_file.name}[/dim]")
+            
+            # Create RAG-friendly metadata
+            metadata_dir = models_dir / ".metadata"
+            metadata_dir.mkdir(exist_ok=True)
+            
+            git_username = os.getenv("GITHUB_HANDLE", os.getenv("USER", "unknown"))
+            team = os.getenv("TEAM", "Unknown")
+            
+            rag_metadata = create_rag_metadata(
+                model_name=normalized_name,
                 source_model=model_id,
-                quantization_method=method
+                quantizations=quantizations_metadata,
+                created_by=git_username,
+                team=team,
+                ollama_username=ollama_username
             )
+            
+            from .utils import save_json_metadata
+            metadata_file = metadata_dir / f"{normalized_name}.json"
+            save_json_metadata(metadata_file, rag_metadata)
+            console.print(f"[green]✓[/green] RAG metadata saved: {metadata_file}")
         else:
-            console.print("\n[yellow]⊙[/yellow] Skipping upload")
+            console.print(f"\n[yellow]⊙[/yellow] Skipping upload")
+        
+        # Cleanup source model files after all processing
+        if not keep_files:
+            console.print(f"\n[dim]Cleaning up source model files...[/dim]")
+            cleanup_source_model(model_dir)
+            console.print(f"[dim]Cleaned up: {model_dir}[/dim]")
         
         prefix = os.getenv("MODEL_PREFIX", "jamph")
-        prefixed_quantized_name = f"{prefix}-{normalized_name}-{method.lower()}"
-        console.print(f"\n[bold green]✓✓✓ Pipeline complete for {prefixed_quantized_name}![/bold green]")
+        console.print(f"\n[bold green]✓✓✓ Pipeline complete for {prefix}-{normalized_name}![/bold green]")
+        console.print(f"[green]Processed {len(method_list)} quantization(s): {', '.join(method_list)}[/green]")
         
     except Exception as e:
         console.print(f"\n[bold red]✗ Pipeline failed:[/bold red] {e}")
