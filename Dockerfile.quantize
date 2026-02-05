@@ -1,0 +1,100 @@
+# Dockerfile.quantize
+# Multi-stage build for model quantization with llama.cpp and Python UV environment
+#
+# Build: docker build -f Dockerfile.quantize -t jamph-quantizer:latest .
+# Run: docker run -v ./Models:/models -v ./logs:/logs jamph-quantizer process --model-id qwen/Qwen2.5-Coder-1.5B
+
+# =============================================================================
+# Stage 1: Build llama.cpp from source
+# =============================================================================
+FROM ubuntu:22.04 AS llama-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set llama.cpp version (update as needed)
+ARG LLAMA_CPP_VERSION=b4291
+
+# Clone and build llama.cpp
+WORKDIR /build
+RUN git clone https://github.com/ggerganov/llama.cpp.git && \
+    cd llama.cpp && \
+    git checkout ${LLAMA_CPP_VERSION} && \
+    cmake -B build -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build --config Release --parallel 2
+
+# Collect binaries
+RUN mkdir -p /llama-dist/bin && \
+    mkdir -p /llama-dist/scripts && \
+    cp /build/llama.cpp/build/bin/llama-quantize /llama-dist/bin/ && \
+    cp /build/llama.cpp/convert_hf_to_gguf.py /llama-dist/scripts/ && \
+    chmod +x /llama-dist/bin/llama-quantize
+
+# =============================================================================
+# Stage 2: Python environment with UV
+# =============================================================================
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm AS python-builder
+
+WORKDIR /app
+
+# Copy all files needed for build
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ ./src/
+
+# Install dependencies with UV (frozen lockfile for reproducibility)
+RUN uv sync --frozen --no-dev
+
+# =============================================================================
+# Stage 3: Final runtime image
+# =============================================================================
+FROM python:3.11-slim
+
+# Install runtime dependencies and Ollama CLI
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    zstd \
+    && curl -fsSL https://ollama.com/install.sh | sh \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy llama.cpp tools from builder
+COPY --from=llama-builder /llama-dist /llama.cpp
+
+# Copy Python environment from UV builder
+COPY --from=python-builder /app/.venv /app/.venv
+COPY --from=python-builder /app/src /app/src
+COPY --from=python-builder /app/pyproject.toml /app/pyproject.toml
+
+# Add llama.cpp to PATH and Python to PATH
+ENV PATH="/llama.cpp/bin:/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app/src:${PYTHONPATH:-}" \
+    PYTHONUNBUFFERED=1
+
+# Create volume mount points
+RUN mkdir -p /models /logs /cache
+
+# Set volumes
+VOLUME ["/models", "/logs", "/cache"]
+
+# Set working directory for model operations
+WORKDIR /workspace
+
+# Default command: show help
+ENTRYPOINT ["python", "-m", "jamph_ml_trainer.cli"]
+CMD ["--help"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import jamph_ml_trainer; print('OK')" || exit 1
+
+# Metadata
+LABEL org.opencontainers.image.title="Jamph ML Trainer" \
+      org.opencontainers.image.description="Model quantization and fine-tuning with MLflow tracking" \
+      org.opencontainers.image.authors="Jamph Team" \
+      org.opencontainers.image.source="https://github.com/navikt/jamph-sql-ki-assistent"

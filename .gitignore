@@ -2,6 +2,7 @@
 *.env
 .env
 mlflow.env
+!example.mlflow.env
 
 # Model files
 *.safetensors

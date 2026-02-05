@@ -1,0 +1,50 @@
+apiVersion: nais.io/v1alpha1
+kind: Application
+metadata:
+  name: jamph-ml-trainer
+  namespace: team-researchops
+  labels:
+    team: team-researchops
+spec:
+  image: {{image}}
+  
+  # Job configuration - not a service
+  replicas:
+    min: 0  # Scale to 0 when not running
+    max: 1
+  
+  # Resource requirements for model quantization
+  resources:
+    limits:
+      memory: 16Gi
+      cpu: "8"
+    requests:
+      cpu: "4"
+      memory: 8Gi
+  
+  # Environment variables from Azure Key Vault
+  envFrom:
+    - secret: jamph-ml-secrets  # Create this secret with: OLLAMA_TOKEN, OLLAMA_USERNAME, MLFLOW_TRACKING_URI, MLFLOW_TRACKING_USERNAME, MLFLOW_TRACKING_PASSWORD
+  
+  env:
+    - name: MODEL_PREFIX
+      value: "nav"  # Models will be prefixed as nav-qwen2.5-coder-1.5b
+    - name: MODELS_DIR
+      value: /models
+    - name: LOGS_DIR
+      value: /logs
+    - name: CACHE_DIR
+      value: /cache
+    - name: PYTHONUNBUFFERED
+      value: "1"
+  
+  # Persistent storage for models and logs
+  filesFrom:
+    - persistentVolumeClaim: jamph-ml-models
+      mountPath: /models
+    - persistentVolumeClaim: jamph-ml-logs
+      mountPath: /logs
+  
+  # No liveness/readiness checks - this is a batch job
+  # Run manually via kubectl or NAIS console:
+  # kubectl exec -it deployment/jamph-ml-trainer -- jamph-ml-trainer process --model-id qwen/Qwen2.5-Coder-1.5B

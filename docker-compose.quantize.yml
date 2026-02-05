@@ -1,0 +1,85 @@
+services:
+  quantizer:
+    build:
+      context: .
+      dockerfile: Dockerfile.quantize
+    image: jamph-quantizer:latest
+    container_name: jamph-quantizer
+    
+    # Volume mounts for persistent storage
+    volumes:
+      - ./model training/Models:/models
+      - ./logs:/logs
+      - ./cache:/cache
+      - ./training data for finetuning:/training-data:ro  # Read-only training data
+    
+    # Environment variables from mlflow.env
+    env_file:
+      - mlflow.env
+    
+    environment:
+      # Model storage
+      - MODELS_DIR=/models
+      - LOGS_DIR=/logs
+      - CACHE_DIR=/cache
+      
+      # Python settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/src
+      
+      # HuggingFace (override in mlflow.env)
+      - HF_HOME=/cache/huggingface
+      - HF_TOKEN=${HF_TOKEN}
+      
+      # MLflow (override in mlflow.env)
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-https://mlflow.vishvadukan.no}
+      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USERNAME}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASSWORD}
+    
+    # Command: process a model (override with docker-compose run)
+    # Example: docker-compose run quantizer process --model-id qwen/Qwen2.5-Coder-1.5B
+    command: ["--help"]
+    
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 16G
+        reservations:
+          cpus: '4'
+          memory: 8G
+    
+    # Restart policy
+    restart: "no"  # Manual runs only
+    
+    # Network
+    networks:
+      - jamph-network
+
+networks:
+  jamph-network:
+    driver: bridge
+
+# Usage Examples:
+#
+# 1. Build the image:
+#    docker-compose -f docker-compose.quantize.yml build
+#
+# 2. Run complete pipeline:
+#    docker-compose -f docker-compose.quantize.yml run --rm quantizer process Qwen/Qwen2.5-Coder-1.5B
+#
+# 3. Download only:
+#    docker-compose -f docker-compose.quantize.yml run --rm quantizer download Qwen/Qwen2.5-Coder-1.5B
+#
+# 4. Quantize existing model:
+#    docker-compose -f docker-compose.quantize.yml run --rm quantizer quantize /models/qwen2.5-coder-1.5b
+#
+# 5. Upload to Ollama:
+#    docker-compose -f docker-compose.quantize.yml run --rm quantizer upload /models/jamph-qwen2.5-coder-1.5b-q4_k_m/jamph-qwen2.5-coder-1.5b-q4_k_m.gguf Qwen/Qwen2.5-Coder-1.5B
+#
+# 6. Custom quantization method:
+#    docker-compose -f docker-compose.quantize.yml run --rm quantizer process Qwen/Qwen2.5-Coder-1.5B --method Q5_K_M
+#
+# 7. Skip upload:
+#    docker-compose -f docker-compose.quantize.yml run --rm quantizer process Qwen/Qwen2.5-Coder-1.5B --skip-upload

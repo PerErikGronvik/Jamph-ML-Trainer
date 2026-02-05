@@ -1,0 +1,57 @@
+# Prevent secret files from being copied into Docker image
+*.env
+.env
+mlflow.env
+.env.*
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Model files (too large, mount as volumes instead)
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+model training/Models/
+
+# Logs
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (not needed in runtime)
+*.md
+!README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Testing
+tests/
+test_*.py
+*_test.py
+
+# Development files
+.editorconfig
+.pre-commit-config.yaml
