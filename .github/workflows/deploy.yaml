@@ -1,9 +1,9 @@
 name: Deploy to NAIS
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:  # Allow manual trigger
+  # push:  # Disabled - not ready for automatic deployment
+  #   branches: [ main ]
+  workflow_dispatch:  # Manual trigger only (Actions tab → Run workflow)
 
 jobs:
   build:
