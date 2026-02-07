@@ -24,7 +24,7 @@ spec:
   
   # Environment variables from Azure Key Vault
   envFrom:
-    - secret: jamph-ml-secrets  # Create this secret with: OLLAMA_TOKEN, OLLAMA_USERNAME
+    - secret: jamph-ml-secrets  # Create this secret with: HF_TOKEN, HF_USERNAME
   
   env:
     - name: MODEL_PREFIX

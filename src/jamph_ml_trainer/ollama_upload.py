@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -26,10 +27,40 @@ class OllamaUploader:
         
         if not self.username:
             raise ValueError("Ollama username not found. Set OLLAMA_USERNAME environment variable.")
-        if not self.token:
-            raise ValueError("Ollama token not found. Set OLLAMA_TOKEN environment variable.")
         
         console.print(f"[green]✓[/green] Ollama uploader initialized for user: {self.username}")
+        if not self.token:
+            console.print(f"[yellow]⚠[/yellow] No OLLAMA_TOKEN found - will require browser authentication")
+
+    def _start_ollama_service(self) -> subprocess.Popen:
+        """Start Ollama service in background."""
+        console.print("[cyan]Starting Ollama service...[/cyan]")
+        process = subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        
+        # Wait for service to be ready (check for a few seconds)
+        max_attempts = 15
+        for attempt in range(max_attempts):
+            try:
+                result = subprocess.run(
+                    ["ollama", "list"],
+                    check=False,
+                    capture_output=True,
+                    timeout=2
+                )
+                if result.returncode == 0:
+                    console.print("[green]✓[/green] Ollama service ready")
+                    return process
+            except (subprocess.TimeoutExpired, Exception):
+                pass
+            
+            time.sleep(1)
+        
+        console.print("[yellow]⚠[/yellow] Ollama service may not be fully ready, continuing...")
+        return process
 
     def upload_model(
         self,
@@ -53,8 +84,12 @@ class OllamaUploader:
             Full Ollama model name (username/model-name)
         """
         full_model_name = f"{self.username}/{model_name}"
+        ollama_process = None
         
         try:
+            # Start Ollama service in background
+            ollama_process = self._start_ollama_service()
+            
             # Generate Modelfile
             console.print(f"[cyan]Creating Modelfile for:[/cyan] {full_model_name}")
             modelfile_content = self._generate_modelfile(
@@ -67,20 +102,6 @@ class OllamaUploader:
             modelfile_path.write_text(modelfile_content, encoding="utf-8")
             console.print("[green]✓[/green] Created Modelfile")
             
-            # Login to Ollama (if not already logged in)
-            console.print("[cyan]Authenticating with Ollama.com...[/cyan]")
-            try:
-                subprocess.run(
-                    ["ollama", "login"],
-                    input=self.token.encode(),
-                    check=True,
-                    capture_output=True,
-                    cwd=str(model_dir)
-                )
-                console.print("[green]✓[/green] Authenticated")
-            except subprocess.CalledProcessError:
-                console.print("[yellow]⚠[/yellow] Authentication may have failed, continuing...")
-            
             # Create model from Modelfile
             console.print(f"[cyan]Creating Ollama model:[/cyan] {full_model_name}")
             subprocess.run(
@@ -90,18 +111,69 @@ class OllamaUploader:
             )
             console.print("[green]✓[/green] Model created locally")
             
-            # Push to Ollama.com
+            # Push to Ollama.com 
             console.print(f"[cyan]Pushing to Ollama.com...[/cyan]")
-            subprocess.run(
+            
+            # Check if already authenticated (credentials exist)
+            ollama_dir = Path.home() / ".ollama"
+            if (ollama_dir / "id_ed25519").exists():
+                console.print("[dim]Using existing Ollama credentials...[/dim]")
+            else:
+                console.print("[yellow]⚠ No Ollama credentials found![/yellow]")
+                console.print("[yellow]You need to authenticate once outside Docker:[/yellow]")
+                console.print("[dim]1. Install Ollama on your host: https://ollama.com[/dim]")
+                console.print("[dim]2. Run: ollama push <any-model-name>[/dim]")
+                console.print("[dim]3. Complete browser authentication[/dim]")
+                console.print("[dim]4. Mount ~/.ollama in docker-compose.yml[/dim]")
+                console.print()
+                console.print("[yellow]Attempting browser authentication (requires manual action)...[/yellow]")
+            
+            # Attempt push - will use existing credentials or trigger browser auth
+            result = subprocess.run(
                 ["ollama", "push", full_model_name],
-                check=True,
-                cwd=str(model_dir)
+                cwd=str(model_dir),
+                capture_output=True,
+                text=True
             )
+            
+            if result.returncode != 0:
+                if "need to be signed in" in result.stderr.lower():
+                    console.print(f"[bold red]✗ Authentication required![/bold red]")
+                    console.print()
+                    console.print("[yellow]To enable automatic uploads:[/yellow]")
+                    console.print("1. On your host machine, run: [cyan]ollama pull llama3.2[/cyan]")
+                    console.print("   (this will trigger browser authentication)")
+                    console.print("2. Complete the browser login")
+                    console.print("3. Add to docker-compose.quantize.yml volumes:")
+                    console.print("   [cyan]- ${HOME}/.ollama:/root/.ollama:ro[/cyan]")
+                    console.print("4. Rebuild and rerun")
+                    console.print()
+                    raise RuntimeError("Ollama authentication required - see instructions above")
+                else:
+                    console.print(f"[bold red]✗ Push failed:[/bold red] {result.stderr}")
+                    raise RuntimeError(f"Failed to push model: {result.stderr}")
+            
             console.print("[green]✓[/green] Model pushed to Ollama.com")
+            
+            # Verify the model is accessible
+            console.print(f"[cyan]Verifying model availability...[/cyan]")
+            time.sleep(2)  # Brief wait for propagation
+            
+            verify_result = subprocess.run(
+                ["ollama", "list"],
+                capture_output=True,
+                text=True
+            )
+            
+            if full_model_name in verify_result.stdout:
+                console.print(f"[green]✓[/green] Model verified locally")
+            else:
+                console.print(f"[yellow]⚠[/yellow] Model not found in local list")
             
             console.print(f"[bold green]✓ Upload complete![/bold green]")
             console.print(f"[cyan]View at:[/cyan] https://ollama.com/{self.username}/{model_name}")
             console.print(f"[cyan]Pull with:[/cyan] ollama pull {full_model_name}")
+            console.print(f"[dim]Note: It may take a few minutes for the model to appear on ollama.com[/dim]")
             
             return full_model_name
 
@@ -112,6 +184,15 @@ class OllamaUploader:
         except subprocess.CalledProcessError as e:
             console.print(f"[bold red]✗ Upload failed:[/bold red] {e}")
             raise
+        finally:
+            # Clean up Ollama service
+            if ollama_process:
+                console.print("[dim]Stopping Ollama service...[/dim]")
+                ollama_process.terminate()
+                try:
+                    ollama_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    ollama_process.kill()
 
     def _generate_modelfile(
         self,

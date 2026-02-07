@@ -1,8 +1,8 @@
 # Environment files
 *.env
 .env
-ollama.env
-!example.ollama.env
+jamph.env
+!example.jamph.env
 
 # Model files
 *.safetensors

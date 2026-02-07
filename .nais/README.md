@@ -11,8 +11,8 @@ Create secret `jamph-ml-secrets` with these keys:
 ```bash
 kubectl create secret generic jamph-ml-secrets \
   --namespace=team-researchops \
-  --from-literal=OLLAMA_TOKEN='oll_xxxxx' \
-  --from-literal=OLLAMA_USERNAME='navikt'
+  --from-literal=HF_TOKEN='hf_xxxxx' \
+  --from-literal=HF_USERNAME='navikt'
 ```
 
 ### 2. Persistent Volume Claims

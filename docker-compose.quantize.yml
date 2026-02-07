@@ -12,9 +12,9 @@ services:
       - ./logs:/logs
       - ./cache:/cache
     
-    # Environment variables from ollama.env
+    # Environment variables from jamph.env
     env_file:
-      - ollama.env
+      - jamph.env
     
     environment:
       # Model storage
@@ -26,9 +26,9 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app/src
       
-      # HuggingFace (override in ollama.env)
+      # HuggingFace (required for model download and upload)
       - HF_HOME=/cache/huggingface
-      - HF_TOKEN=${HF_TOKEN}
+      # HF_TOKEN and HF_USERNAME are loaded from jamph.env via env_file
       
       # Model configuration
       - MODEL_PREFIX=${MODEL_PREFIX:-jamph}

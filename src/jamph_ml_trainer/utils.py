@@ -3,8 +3,11 @@
 import json
 import os
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict
+
+from .env_utils import get_model_prefix
 
 
 def normalize_model_name(model_id: str) -> str:
@@ -39,8 +42,7 @@ def get_jamph_name(model_id: str, include_prefix: bool = True) -> str:
         get_jamph_name("qwen/Qwen2.5-Coder-1.5B", False) -> qwen2.5-coder-1.5b
         get_jamph_name("qwen/Qwen2.5-Coder-1.5B", True) -> jamph-qwen2.5-coder-1.5b
     """
-    import os
-    prefix = os.getenv("MODEL_PREFIX", "jamph")
+    prefix = get_model_prefix()
     normalized = normalize_model_name(model_id)
     
     if include_prefix and not normalized.startswith(f"{prefix}-"):
@@ -62,8 +64,9 @@ def save_json_metadata(path: Path, data: Dict[str, Any]) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+@lru_cache(maxsize=1)
 def get_models_dir() -> Path:
-    """Get the models directory path."""
+    """Get the models directory path (cached for performance)."""
     if os.path.exists("/models"):
         return Path("/models")
     return Path(__file__).parent.parent.parent / "model training" / "Models"
@@ -75,23 +78,23 @@ def create_rag_metadata(
     quantizations: list[Dict[str, Any]],
     created_by: str,
     team: str,
-    ollama_username: str
+    hf_username: str
 ) -> Dict[str, Any]:
     """
     Create RAG-friendly metadata for model quantizations.
     
     Args:
-        model_name: Normalized model name (e.g., qwen2.5-coder-1.5b)
-        source_model: HuggingFace model ID (e.g., qwen/Qwen2.5-Coder-1.5B)
+        model_name: Normalized model name
+        source_model: HuggingFace model ID
         quantizations: List of quantization info dicts with method, size_mb, uploaded_at
         created_by: GitHub username or developer identifier
         team: Team name
-        ollama_username: Ollama.com username for URL construction
+        hf_username: HuggingFace username for URL construction
     
     Returns:
         RAG-friendly metadata dictionary
     """
-    prefix = os.getenv("MODEL_PREFIX", "jamph")
+    prefix = get_model_prefix()
     
     return {
         "model": {
@@ -107,8 +110,8 @@ def create_rag_metadata(
                 "method": q["method"],
                 "size_mb": round(q["size_mb"], 2),
                 "uploaded_at": q["uploaded_at"],
-                "ollama_url": f"https://ollama.com/{ollama_username}/{prefix}-{model_name}-{q['method'].lower()}",
-                "ollama_command": f"ollama run {ollama_username}/{prefix}-{model_name}-{q['method'].lower()}"
+                "huggingface_url": f"https://huggingface.co/{hf_username}/{prefix}-{model_name}-{q['method'].lower()}",
+                "download_command": f"huggingface-cli download {hf_username}/{prefix}-{model_name}-{q['method'].lower()}"
             }
             for q in quantizations
         ],
