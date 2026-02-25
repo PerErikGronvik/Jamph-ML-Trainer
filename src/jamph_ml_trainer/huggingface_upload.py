@@ -1,8 +1,6 @@
 """Upload quantized models to HuggingFace Hub."""
 
-import os
 import shutil
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -39,20 +37,6 @@ class HuggingFaceUploader:
         
         console.print(f"[HUF-001] [green]✓[/green] HuggingFace uploader initialized for user: {self.username}")
     
-    def _clear_hf_cache(self) -> None:
-        """Clear HuggingFace cache to prevent MerkleDB Shard errors."""
-        cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
-        if cache_dir.exists():
-            try:
-                # Only clear .incomplete files and lock files
-                for incomplete in cache_dir.rglob("*.incomplete"):
-                    incomplete.unlink(missing_ok=True)
-                for lock in cache_dir.rglob("*.lock"):
-                    lock.unlink(missing_ok=True)
-                console.print("[HUF-002] [green]✓[/green] Cleared HuggingFace cache (incomplete files)")
-            except Exception as e:
-                console.print(f"[HUF-003] [yellow]⚠[/yellow] Could not clear cache: {e}")
-    
     def _check_disk_space(self, required_mb: int = 500) -> bool:
         """Check if sufficient disk space is available.
         
@@ -68,13 +52,12 @@ class HuggingFaceUploader:
             
             if available_mb < required_mb:
                 console.print(f"[HUF-004] [red]✗[/red] Insufficient disk space: {available_mb:.0f}MB available, {required_mb}MB required")
-                console.print(f"[HUF-005] [yellow]Tip:[/yellow] Clear space or set HF_XET_CACHE to a location with more space")
                 return False
             
-            console.print(f"[HUF-006] [green]✓[/green] Disk space: {available_mb:.0f}MB available")
+            console.print(f"[HUF-005] [green]✓[/green] Disk space: {available_mb:.0f}MB available")
             return True
         except Exception as e:
-            console.print(f"[HUF-007] [yellow]⚠[/yellow] Could not check disk space: {e}")
+            console.print(f"[HUF-006] [yellow]⚠[/yellow] Could not check disk space: {e}")
             return True  # Continue anyway
 
     def upload_model(
@@ -105,8 +88,7 @@ class HuggingFaceUploader:
         repo_id = f"{self.username}/{model_name}"
         
         # Pre-upload checks
-        console.print("[HUF-008] [cyan]Running pre-upload checks...[/cyan]")
-        self._clear_hf_cache()
+        console.print("[HUF-007] [cyan]Running pre-upload checks...[/cyan]")
         
         # Check disk space (estimate: 3x file size for safety)
         required_mb = int((gguf_file.stat().st_size / (1024 * 1024)) * 3)
@@ -115,16 +97,16 @@ class HuggingFaceUploader:
         
         try:
             # Create repository if it doesn't exist
-            console.print(f"[HUF-009] [cyan]Creating/checking repository:[/cyan] {repo_id}")
+            console.print(f"[HUF-008] [cyan]Creating/checking repository:[/cyan] {repo_id}")
             self.api.create_repo(
                 repo_id=repo_id,
                 repo_type="model",
                 exist_ok=True
             )
-            console.print("[HUF-010] [green]✓[/green] Repository ready")
+            console.print("[HUF-009] [green]✓[/green] Repository ready")
             
             # Create README.md
-            console.print(f"[HUF-011] [cyan]Creating README...[/cyan]")
+            console.print(f"[HUF-010] [cyan]Creating README...[/cyan]")
             readme_content = self._generate_readme(
                 model_name=model_name,
                 source_model=source_model,
@@ -135,50 +117,28 @@ class HuggingFaceUploader:
             
             readme_path = model_dir / "README.md"
             readme_path.write_text(readme_content, encoding="utf-8")
-            console.print("[HUF-012] [green]✓[/green] Created README.md")
+            console.print("[HUF-011] [green]✓[/green] Created README.md")
             
-            # Upload entire folder (includes GGUF, README, metadata files)
-            console.print(f"[HUF-013] [cyan]Uploading model folder...[/cyan]")
-            if run_as_future:
-                console.print(f"[HUF-013a] [cyan]Using async upload (run_as_future=True)[/cyan]")
-            
-            commit_msg = f"Upload {quantization_method} quantized model from {source_model}"
-            
+            # Upload entire folder (simple approach)
+            console.print(f"[HUF-012] [cyan]Uploading model folder...[/cyan]")
             self.api.upload_folder(
                 folder_path=str(model_dir),
                 repo_id=repo_id,
                 repo_type="model",
-                token=self.token,
-                commit_message=commit_msg,
-                run_as_future=run_as_future,
-                ignore_patterns=["*.safetensors", "*.bin", "*.pt", "*.pth"]  # Only upload GGUF and docs
+                commit_message=f"Upload {quantization_method} quantized model",
             )
+            console.print(f"[HUF-013] [green]✓[/green] Upload complete")
             
-            if run_as_future:
-                console.print(f"[HUF-014] [green]✓[/green] Upload started (async mode)")
-            else:
-                console.print(f"[HUF-014] [green]✓[/green] Uploaded model folder")
-            
-            console.print(f"[HUF-014] [green]✓[/green] Uploaded model folder")
-            
-            console.print(f"[HUF-015] [bold green]✓ Upload complete![/bold green]")
-            console.print(f"[HUF-016] [cyan]View at:[/cyan] https://huggingface.co/{repo_id}")
-            console.print(f"[HUF-017] [cyan]Download with:[/cyan] huggingface-cli download {repo_id}")
+            console.print(f"[HUF-014] [bold green]✓ Upload complete![/bold green]")
+            console.print(f"[HUF-015] [cyan]View at:[/cyan] https://huggingface.co/{repo_id}")
+            console.print(f"[HUF-016] [cyan]Download with:[/cyan] huggingface-cli download {repo_id}")
             
             return repo_id
 
         except Exception as e:
             error_msg = str(e)
-            console.print(f"[HUF-018] [bold red]✗ Upload failed:[/bold red] {error_msg}")
-            
-            # Provide recovery suggestions for common errors
-            if "MerkleDB Shard" in error_msg or "File I/O error" in error_msg:
-                console.print("[HUF-019] [yellow]Recovery suggestions:[/yellow]")
-                console.print("[HUF-020]   1. Wait 5-10 minutes and retry (HuggingFace may be throttling)")
-                console.print("[HUF-021]   2. Check internet connection stability")
-                console.print("[HUF-022]   3. Retry command - partial uploads will resume")
-                console.print("[HUF-023]   4. Set HF_XET_CACHE to a directory with more space:")
-                console.print("[HUF-024]      export HF_XET_CACHE=/path/to/larger/disk")
+            console.print(f"[HUF-017] [bold red]✗ Upload failed:[/bold red] {error_msg}")
+            console.print("[HUF-018] [yellow]Tip: Run the same command again - uploads resume from where they stopped.[/yellow]")
             
             raise
 

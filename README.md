@@ -74,18 +74,13 @@ model training/Models/
 
 Each folder uploaded to: `https://huggingface.co/{your-username}/{folder-name}`
 
-## Local Development (No Docker)
-
-```bash
-# Install UV package manager
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install dependencies and run
-uv sync
-uv run jamph-ml-trainer process qwen/Qwen2.5-0.5B
-```
-
 ## Troubleshooting
+
+**"No config file found" error on Mac/Linux**: Make sure you have created `jamph.env` (lowercase) in the project root:
+```bash
+cp example.jamph.env jamph.env
+# Then edit jamph.env with your HF_USERNAME and HF_TOKEN
+```
 
 **Build fails**: Ensure Docker has 8GB+ RAM allocated (Docker Desktop → Settings → Resources)
 

@@ -13,6 +13,7 @@ Do:
 - When asked to debug, run the docker locally, dont try to deploy to kubernetes or use github actions.
 - A good variable/function name can replace many comments, more than one word variable/function names are allowed.
 - Use numbering for logs, errors, and outputs to make them easier to reference.
+- This project uses UV. UV uses add and uv sync, not pip install. Add all dependencies to pyproject.toml and let uv handle it
 
 Don't:
 - Add code comments unless explicitly asked to.

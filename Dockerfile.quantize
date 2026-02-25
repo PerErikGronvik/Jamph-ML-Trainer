@@ -50,15 +50,6 @@ COPY src/ ./src/
 # Install dependencies with UV (frozen lockfile for reproducibility)
 RUN uv sync --frozen --no-dev
 
-# Install CPU-only PyTorch separately (for model weight loading in convert script)
-# llama.cpp quantization uses auto-detected GPU/CPU, but torch is only for loading
-# Install torch+numpy from CPU index, sentencepiece+safetensors+transformers from PyPI
-RUN uv pip install sentencepiece>=0.1.99 safetensors>=0.4.0 transformers>=4.30.0 && \
-    uv pip install \
-    'torch>=2.0.0' \
-    'numpy>=1.24.0' \
-    --index-url https://download.pytorch.org/whl/cpu
-
 # =============================================================================
 # Stage 3: Final runtime image
 # =============================================================================
@@ -67,9 +58,11 @@ FROM python:3.11-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     git \
+    git-lfs \
     curl \
     zstd \
     libgomp1 \
+    && git lfs install \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

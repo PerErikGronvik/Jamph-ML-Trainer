@@ -15,6 +15,14 @@ model training/Models/
 # Logs
 logs/
 
+# Cache
+cache/
+.cache/
+
+# Test files
+test_*.py
+*_test.py
+
 # Python
 __pycache__/
 *.py[cod]
