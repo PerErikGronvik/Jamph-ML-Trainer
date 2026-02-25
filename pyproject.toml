@@ -5,7 +5,7 @@ description = "CPU-based model quantization toolkit for Ollama deployment"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "huggingface-hub==0.30.*",  # Pin to 0.30.x - version 1.x has XetHub/MerkleDB bugs
+    "huggingface-hub==1.4.*",  # Pin to 0.30.x - version 1.x has XetHub/MerkleDB bugs
     "typer>=0.15.0",
     "rich>=14.0.0",
     "gguf>=0.10.0",
