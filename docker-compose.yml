@@ -1,0 +1,60 @@
+services:
+  quantizer:
+    build:
+      context: .
+      dockerfile: Dockerfile.quantize
+    image: jamph-quantizer:latest
+    container_name: jamph-quantizer
+    
+    # Volume mounts for persistent storage
+    volumes:
+      - ./model training/Models:/models
+      - ./logs:/logs
+      - ./cache:/cache
+    
+    # Environment variables from jamph.env
+    env_file:
+      - jamph.env
+    
+    environment:
+      # Model storage
+      - MODELS_DIR=/models
+      - LOGS_DIR=/logs
+      - CACHE_DIR=/cache
+      
+      # Python settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/src
+      
+      # HuggingFace (required for model download and upload)
+      - HF_HOME=/cache/huggingface
+      # HF_TOKEN and HF_USERNAME are loaded from jamph.env via env_file
+      
+      # Model configuration
+      - MODEL_PREFIX=${MODEL_PREFIX:-jamph}
+    
+    # Command: process a model (override with docker-compose run)
+    command: ["--help"]
+    
+    # Restart policy
+    restart: "no"  # Manual runs only
+
+# Usage Examples:
+#
+# 1. Build the image:
+#    docker-compose build quantizer
+#
+# 2. Run complete pipeline (download + quantize + upload):
+#    docker-compose run --rm quantizer process Qwen/Qwen2.5-Coder-7B
+#
+# 3. Multiple quantization methods:
+#    docker-compose run --rm quantizer process Qwen/Qwen2.5-Coder-7B --methods Q4_K_M,Q5_K_M,Q8_0
+#
+# 4. Skip upload (local only):
+#    docker-compose run --rm quantizer process Qwen/Qwen2.5-Coder-7B --skip-upload
+#
+# 5. Download only:
+#    docker-compose run --rm quantizer download Qwen/Qwen2.5-Coder-7B
+#
+# 6. Quantize existing model:
+#    docker-compose run --rm quantizer quantize /models/qwen2.5-coder-7b --methods Q4_K_M
