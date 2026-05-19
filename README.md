@@ -1,3 +1,4 @@
+# Innleveringsfrist versjon
 # Jamph ML Trainer
 
 Download HuggingFace models, quantize them to GGUF format using llama.cpp, and optionally upload to HuggingFace Hub.
